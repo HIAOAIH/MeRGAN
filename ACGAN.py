@@ -67,7 +67,7 @@ class Discriminator(nn.Module):
             nn.Sigmoid(),
         )
         self.cl = nn.Sequential(
-            nn.Linear(1024, self.class_num)
+            nn.Linear(1024, self.total_class_num)
         )
 
     def forward(self, image):
@@ -83,8 +83,9 @@ class Discriminator(nn.Module):
 
 
 class ACGAN(object):
-    def __init__(self, data_loader, sample_num=100, noise_dim=100, total_class_num=10, class_index=10,
+    def __init__(self, data_loader, dataset='MNIST', sample_num=100, noise_dim=100, total_class_num=10, class_index=10,
                  method='ra', result_dir='result', batch_size=64, lr=0.0002, beta1=0.5, beta2=0.999, gpu_mode=True, epoch=20):
+        self.dataset = dataset
         self.sample_num = sample_num
         self.noise_dim = noise_dim
         self.total_class_num = total_class_num
@@ -151,3 +152,87 @@ class ACGAN(object):
                 if self.gpu_mode:
                     x, y, y_vec, z = x.cuda(), y.cuda(), y_vec.cuda(), z.cuda()
 
+                self.D_optimizer.zero_grad()
+
+                # D를 훈련할 때에는 실제 데이터와 fake 데이터의 loss를 각각 구한 후 한번에 backward & step
+                D_real, C_real = self.D(x)
+                D_real_loss = self.BCE_loss(D_real, y_real)
+                C_real_loss = self.CE_loss(C_real, y)
+
+                G_x = self.G(z, y_vec)
+                D_fake, C_fake = self.D(G_x)
+                D_fake_loss = self.BCE_loss(D_fake, y_fake)
+                C_fake_loss = self.CE_loss(C_fake, y)
+
+                discriminator_loss = D_real_loss + C_real_loss + D_fake_loss + C_fake_loss
+                discriminator_loss.backward()
+                self.D_optimizer.step()
+
+                self.G_optimizer.zero_grad()
+                G_x = self.G(z, y_vec)
+                D_fake, C_fake = self.D(G_x)
+
+                generator_loss = self.BCE_loss(D_fake, y_real) + self.CE_loss(C_fake, y)
+                generator_loss.backward()
+                self.G_optimizer.step()
+
+                if ((idx + 1) % 10) == 0:
+                    print("Epoch: [%2d] [%4d/%4d] D_loss: %.8f, G_loss: %.8f" %
+                          ((epoch + 1), (idx + 1), self.data_loader.dataset.__len__() // self.batch_size,
+                           discriminator_loss.item(), generator_loss.item()))
+
+            with torch.no_grad():
+                self.visualize_results((epoch + 1))
+
+    def visualize_results(self, epoch):
+        self.G.eval()
+
+        image_frame_dim = int(np.floor(np.sqrt(self.sample_num)))
+
+        # class_index: class_index 대신 현재까지 훈련한 class의 수를 전달해야
+        for i in range(self.class_index):
+            if i == 0:
+                y = torch.randint(i, i + 1, (10, 1))
+            else:
+                y = torch.cat([y, torch.randint(i, i + 1, (10, 1))])
+
+        sample_y = torch.zeros(self.total_class_num * 10, 10).scatter_(
+            1, y.type(torch.LongTensor), 1)
+        sample_z_ = torch.rand((self.total_class_num * 10, self.noise_dim))
+
+        if self.gpu_mode:
+            sample_z_, sample_y = sample_z_.cuda(), sample_y.cuda()
+
+        samples = self.G(sample_z_, sample_y)
+
+        if self.gpu_mode:
+            samples = samples.cpu().data.numpy().transpose(0, 2, 3, 1)
+        else:
+            samples = samples.data.numpy().transpose(0, 2, 3, 1)
+
+        samples = (samples + 1) / 2
+        images = np.squeeze(
+            self.merge(samples[:image_frame_dim * image_frame_dim, :, :, :], [image_frame_dim, image_frame_dim]))
+        # result_dir = 'result/MNIST'
+        # class_index: 몇 개의 class를 훈련시켰는지에 대한 변수 대신 사용
+        imageio.imwrite(self.result_dir + '/' + 'to_' + self.class_index + '/' + '_epoch%03d' % epoch + '.png', images)
+
+    def merge(self, images, size):
+        h, w = images.shape[1], images.shape[2]
+        if (images.shape[3] in (3, 4)):
+            c = images.shape[3]
+            img = np.zeros((h * size[0], w * size[1], c))
+            for idx, image in enumerate(images):
+                i = idx % size[1]
+                j = idx // size[1]
+                img[j * h:j * h + h, i * w:i * w + w, :] = image
+            return img
+        elif images.shape[3] == 1:
+            img = np.zeros((h * size[0], w * size[1]))
+            for idx, image in enumerate(images):
+                i = idx % size[1]
+                j = idx // size[1]
+                img[j * h:j * h + h, i * w:i * w + w] = image[:, :, 0]
+            return img
+        else:
+            raise ValueError('in merge(images,size) images parameter ''must have dimensions: HxW or HxWx3 or HxWx4')

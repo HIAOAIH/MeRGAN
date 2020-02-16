@@ -51,13 +51,13 @@ class MeRGAN(object):
         n = len(self.class_array)
         for i in range((self.num_in_class * n // self.batch_size)):
             y_mer = torch.LongTensor(self.batch_size, 1).random_(0, n)
-            y_mer_one_hot = torch.zeros(self.batch_size, n).scatter_(1, y_mer.type(torch.LongTensor), 1)
+            y_mer_one_hot = torch.zeros(self.batch_size, self.total_class_num).scatter_(1, y_mer.type(torch.LongTensor), 1)
             z_mer = torch.rand(self.batch_size, 100)
 
             if self.ACGAN.gpu_mode:
                 y_mer, y_mer_one_hot, z_mer = y_mer.cuda(), y_mer_one_hot.cuda(), z_mer.cuda()
 
-            x_mer = self.G(z_mer, y_mer_one_hot)
+            x_mer = self.ACGAN.G(z_mer, y_mer_one_hot)
 
             if self.ACGAN.gpu_mode:
                 x_mer, y_mer = x_mer.cpu().detach().view(-1, 28, 28), y_mer.cpu().detach()
@@ -68,3 +68,5 @@ class MeRGAN(object):
                 data_list = CustomDataset(x_mer, y_mer.view(-1))
             else:
                 data_list.append(x_mer, y_mer.view(-1))
+
+        return data_list

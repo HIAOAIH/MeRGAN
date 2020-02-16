@@ -42,7 +42,7 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, input_channel=1, dc_dim=1, total_class_num=10, input_size=28):
+    def __init__(self, input_channel=1, dc_dim=1, input_size=28, total_class_num=10):
         super(Discriminator, self).__init__()
         self.input_channel = input_channel
         self.dc_dim = dc_dim
@@ -63,7 +63,7 @@ class Discriminator(nn.Module):
         )
 
         self.dc = nn.Sequential(
-            nn.Linear(1024, self.output_dim),
+            nn.Linear(1024, self.dc_dim),
             nn.Sigmoid(),
         )
         self.cl = nn.Sequential(
@@ -84,7 +84,8 @@ class Discriminator(nn.Module):
 
 class ACGAN(object):
     def __init__(self, data_loader, dataset='MNIST', sample_num=100, noise_dim=100, total_class_num=10, class_index=10,
-                 method='ra', result_dir='result', batch_size=64, lr=0.0002, beta1=0.5, beta2=0.999, gpu_mode=True, epoch=20):
+                 method='ra', result_dir='result', batch_size=64, lr=0.0002, beta1=0.5, beta2=0.999, gpu_mode=True,
+                 epoch=20):
         self.dataset = dataset
         self.sample_num = sample_num
         self.noise_dim = noise_dim
@@ -117,6 +118,7 @@ class ACGAN(object):
             self.MSE_loss = nn.MSELoss()
 
         self.data_loader = data_loader
+
         data = self.data_loader.__iter__().__next__()[0]
 
         self.G = Generator(self.noise_dim, data.shape[1], data.shape[2], self.total_class_num)
@@ -127,11 +129,11 @@ class ACGAN(object):
 
         if self.gpu_mode:
             self.G, self.D = self.G.cuda(), self.D.cuda()
-            self.BCE_loss, self.CE_loss = self.CE_loss.cuda()
+            self.BCE_loss, self.CE_loss = self.BCE_loss.cuda(), self.CE_loss.cuda()
             if self.method == 'ra':
                 self.MSE_loss = self.MSE_loss.cuda()
 
-    def train(self):
+    def train(self, G_past=None):
         y_real, y_fake = torch.ones(self.batch_size, 1), torch.zeros(self.batch_size, 1)
         if self.gpu_mode:
             y_real, y_fake = y_real.cuda(), y_fake.cuda()
@@ -169,12 +171,50 @@ class ACGAN(object):
                 self.D_optimizer.step()
 
                 self.G_optimizer.zero_grad()
-                G_x = self.G(z, y_vec)
-                D_fake, C_fake = self.D(G_x)
 
-                generator_loss = self.BCE_loss(D_fake, y_real) + self.CE_loss(C_fake, y)
-                generator_loss.backward()
-                self.G_optimizer.step()
+                if G_past is None:
+                    G_x = self.G(z, y_vec)
+                    D_fake, C_fake = self.D(G_x)
+
+                    generator_loss = self.BCE_loss(D_fake, y_real) + self.CE_loss(C_fake, y)
+                    generator_loss.backward()
+                    self.G_optimizer.step()
+
+                else:
+                    sample_z = torch.zeros(self.batch_size, self.noise_dim)
+                    for i in range(self.batch_size // (self.class_index - 1)):
+                        sample_z[i * (self.class_index - 1)] = torch.rand(1, self.noise_dim)
+                        for j in range(1, self.class_index - 1):
+                            sample_z[i * (self.class_index - 1) + j] = sample_z[i * (self.class_index - 1)]
+
+                    temp = torch.zeros(self.class_index - 1, 1)
+                    for i in range(self.class_index - 1):
+                        temp[i, 0] = i
+
+                    temp_y = torch.zeros(self.batch_size, 1)
+                    for i in range(self.batch_size // (self.class_index - 1)):
+                        temp_y[i * (self.class_index - 1): (i + 1) * (self.class_index - 1)] = temp
+
+                    sample_y = torch.zeros(self.batch_size, self.total_class_num).scatter_(
+                        1, temp_y.type(torch.LongTensor), 1)
+
+                    if self.gpu_mode:
+                        sample_y, sample_z = sample_y.cuda(), sample_z.cuda()
+
+                    g_from_G = self.G(sample_z, sample_y)
+                    g_from_G_past = G_past(sample_z, sample_y)
+
+                    ra_loss = self.MSE_loss(g_from_G, g_from_G_past)
+                    ra_loss.backward()
+
+                    # code 원래 위치
+
+                    G_ = self.G(z, y_vec)
+                    D_fake, C_fake = self.D(G_)
+                    generator_loss = self.BCE_loss(D_fake, y_real) + self.CE_loss(C_fake, y)
+
+                    generator_loss.backward()
+                    self.G_optimizer.step()
 
                 if ((idx + 1) % 10) == 0:
                     print("Epoch: [%2d] [%4d/%4d] D_loss: %.8f, G_loss: %.8f" %
@@ -196,9 +236,9 @@ class ACGAN(object):
             else:
                 y = torch.cat([y, torch.randint(i, i + 1, (10, 1))])
 
-        sample_y = torch.zeros(self.total_class_num * 10, 10).scatter_(
+        sample_y = torch.zeros(self.class_index * 10, 10).scatter_(
             1, y.type(torch.LongTensor), 1)
-        sample_z_ = torch.rand((self.total_class_num * 10, self.noise_dim))
+        sample_z_ = torch.rand((self.class_index * 10, self.noise_dim))
 
         if self.gpu_mode:
             sample_z_, sample_y = sample_z_.cuda(), sample_y.cuda()
@@ -215,7 +255,7 @@ class ACGAN(object):
             self.merge(samples[:image_frame_dim * image_frame_dim, :, :, :], [image_frame_dim, image_frame_dim]))
         # result_dir = 'result/MNIST'
         # class_index: 몇 개의 class를 훈련시켰는지에 대한 변수 대신 사용
-        imageio.imwrite(self.result_dir + '/' + 'to_' + self.class_index + '/' + '_epoch%03d' % epoch + '.png', images)
+        imageio.imwrite(self.result_dir + '/' + 'to_%d' % (self.class_index - 1) + '/' + '_epoch%03d' % epoch + '.png', images)
 
     def merge(self, images, size):
         h, w = images.shape[1], images.shape[2]

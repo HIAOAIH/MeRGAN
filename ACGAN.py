@@ -84,7 +84,7 @@ class Discriminator(nn.Module):
 
 class ACGAN(object):
     def __init__(self, data_loader, dataset='MNIST', sample_num=100, noise_dim=100, total_class_num=10, class_index=10,
-                 method='ra', result_dir='result', batch_size=64, lr=0.0002, beta1=0.5, beta2=0.999, gpu_mode=True,
+                 method='replay_alignment', result_dir='result', batch_size=64, lr=0.0002, beta1=0.5, beta2=0.999, gpu_mode=True,
                  epoch=20):
         self.dataset = dataset
         self.sample_num = sample_num
@@ -112,9 +112,9 @@ class ACGAN(object):
         self.BCE_loss = nn.BCELoss()
         # loss to classify specific class of input image
         self.CE_loss = nn.CrossEntropyLoss()
-        if method == 'ra':
+        if method == 'replay_alignment':
             # loss to train current Generator using past Generator
-            self.method = 'ra'
+            self.method = 'replay_alignment'
             self.MSE_loss = nn.MSELoss()
 
         self.data_loader = data_loader
@@ -130,7 +130,7 @@ class ACGAN(object):
         if self.gpu_mode:
             self.G, self.D = self.G.cuda(), self.D.cuda()
             self.BCE_loss, self.CE_loss = self.BCE_loss.cuda(), self.CE_loss.cuda()
-            if self.method == 'ra':
+            if self.method == 'replay_alignment':
                 self.MSE_loss = self.MSE_loss.cuda()
 
     def train(self, G_past=None):
@@ -172,54 +172,58 @@ class ACGAN(object):
 
                 self.G_optimizer.zero_grad()
 
-                if G_past is None:
-                    G_x = self.G(z, y_vec)
-                    D_fake, C_fake = self.D(G_x)
+                if G_past is not None:
+                    for k in range(self.class_index):
+                        sample_z = torch.zeros(self.batch_size, self.noise_dim)
+                        for i in range(self.batch_size // (self.class_index - 1)):
+                            sample_z[i * (self.class_index - 1)] = torch.rand(1, self.noise_dim)
+                            for j in range(1, self.class_index - 1):
+                                sample_z[i * (self.class_index - 1) + j] = sample_z[i * (self.class_index - 1)]
 
-                    generator_loss = self.BCE_loss(D_fake, y_real) + self.CE_loss(C_fake, y)
-                    generator_loss.backward()
-                    self.G_optimizer.step()
+                        temp = torch.zeros(self.class_index - 1, 1)
+                        for i in range(self.class_index - 1):
+                            temp[i, 0] = i
 
-                else:
-                    sample_z = torch.zeros(self.batch_size, self.noise_dim)
-                    for i in range(self.batch_size // (self.class_index - 1)):
-                        sample_z[i * (self.class_index - 1)] = torch.rand(1, self.noise_dim)
-                        for j in range(1, self.class_index - 1):
-                            sample_z[i * (self.class_index - 1) + j] = sample_z[i * (self.class_index - 1)]
+                        temp_y = torch.zeros(self.batch_size, 1)
+                        for i in range(self.batch_size // (self.class_index - 1)):
+                            temp_y[i * (self.class_index - 1): (i + 1) * (self.class_index - 1)] = temp
 
-                    temp = torch.zeros(self.class_index - 1, 1)
-                    for i in range(self.class_index - 1):
-                        temp[i, 0] = i
+                        sample_y = torch.zeros(self.batch_size, self.total_class_num).scatter_(
+                            1, temp_y.type(torch.LongTensor), 1)
 
-                    temp_y = torch.zeros(self.batch_size, 1)
-                    for i in range(self.batch_size // (self.class_index - 1)):
-                        temp_y[i * (self.class_index - 1): (i + 1) * (self.class_index - 1)] = temp
+                        if self.gpu_mode:
+                            sample_y, sample_z = sample_y.cuda(), sample_z.cuda()
 
-                    sample_y = torch.zeros(self.batch_size, self.total_class_num).scatter_(
-                        1, temp_y.type(torch.LongTensor), 1)
+                        g_from_G = self.G(sample_z, sample_y)
+                        g_from_G_past = G_past(sample_z, sample_y)
 
-                    if self.gpu_mode:
-                        sample_y, sample_z = sample_y.cuda(), sample_z.cuda()
+                        ra_loss = self.MSE_loss(g_from_G, g_from_G_past)
+                        ra_loss.backward()
 
-                    g_from_G = self.G(sample_z, sample_y)
-                    g_from_G_past = G_past(sample_z, sample_y)
+                        # 이전 G와의 loss를 먼저 optimize
+                        # self.G_optimizer.step()
+                        # self.G_optimizer.zero_grad()
 
-                    ra_loss = self.MSE_loss(g_from_G, g_from_G_past)
-                    ra_loss.backward()
+                        # code 원래 위치
 
-                    # code 원래 위치
+                G_x = self.G(z, y_vec)
+                D_fake, C_fake = self.D(G_x)
+                generator_loss = self.BCE_loss(D_fake, y_real) + self.CE_loss(C_fake, y)
 
-                    G_ = self.G(z, y_vec)
-                    D_fake, C_fake = self.D(G_)
-                    generator_loss = self.BCE_loss(D_fake, y_real) + self.CE_loss(C_fake, y)
-
-                    generator_loss.backward()
-                    self.G_optimizer.step()
+                generator_loss.backward()
+                self.G_optimizer.step()
 
                 if ((idx + 1) % 10) == 0:
-                    print("Epoch: [%2d] [%4d/%4d] D_loss: %.8f, G_loss: %.8f" %
-                          ((epoch + 1), (idx + 1), self.data_loader.dataset.__len__() // self.batch_size,
-                           discriminator_loss.item(), generator_loss.item()))
+                    #if self.method == 'joint_retraining' or self.class_index == 1:
+                    if G_past is None:
+                        print("Epoch: [%2d] [%4d/%4d] D_loss: %.8f, G_loss: %.8f" %
+                              ((epoch + 1), (idx + 1), self.data_loader.dataset.__len__() // self.batch_size,
+                               discriminator_loss.item(), generator_loss.item()))
+                    #elif self.method == 'replay_alignment':
+                    else:
+                        print("Epoch: [%2d] [%4d/%4d] D_loss: %.8f, G_loss_with_G_past: %.8f, G_loss: %.8f" %
+                              ((epoch + 1), (idx + 1), self.data_loader.dataset.__len__() // self.batch_size,
+                               discriminator_loss.item(), ra_loss.item(), generator_loss.item()))
 
             with torch.no_grad():
                 self.visualize_results((epoch + 1))

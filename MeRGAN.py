@@ -37,7 +37,8 @@ class MeRGAN(object):
         if class_index in self.class_array:
             raise Exception("this class is already trained.")
         self.ACGAN = ACGAN(data_loader=torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, shuffle=True),
-                           result_dir= self.result_dir, class_index=len(self.class_array) + 1, epoch=self.epoch)
+                           class_index=len(self.class_array) + 1, method=self.method, result_dir= self.result_dir,
+                           batch_size=self.batch_size, epoch=self.epoch)
         self.ACGAN.train(G_past)
         self.class_array.append(class_index)
 

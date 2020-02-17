@@ -5,6 +5,7 @@
 
 import argparse
 import os
+import copy
 from MeRGAN import MeRGAN
 
 
@@ -64,7 +65,7 @@ def main():
                 mergan.init_ACGAN(mergan.data_list[i], i)
             else:
                 mergan.init_ACGAN(mergan.data_list[i], i, G_past)
-            G_past = mergan.ACGAN.G
+            G_past = copy.deepcopy(mergan.ACGAN.G)
 
 
 if __name__ == '__main__':

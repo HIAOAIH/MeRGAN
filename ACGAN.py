@@ -168,10 +168,10 @@ class ACGAN(object):
 
                 discriminator_loss = D_real_loss + C_real_loss + D_fake_loss + C_fake_loss
                 discriminator_loss.backward()
-                self.D_optimizer.step()
+                # self.D_optimizer.step()
 
                 self.G_optimizer.zero_grad()
-
+                tmp_loss = 0
                 if G_past is not None:
                     for k in range(self.class_index):
                         sample_z = torch.zeros(self.batch_size, self.noise_dim)
@@ -198,11 +198,12 @@ class ACGAN(object):
                         g_from_G_past = G_past(sample_z, sample_y)
 
                         ra_loss = self.MSE_loss(g_from_G, g_from_G_past)
-                        ra_loss.backward()
-
+                        # ra_loss.backward()
+                        tmp_loss += ra_loss
                         # 이전 G와의 loss를 먼저 optimize
                         # self.G_optimizer.step()
                         # self.G_optimizer.zero_grad()
+                    tmp_loss /= self.class_index
 
                         # code 원래 위치
 
@@ -210,7 +211,10 @@ class ACGAN(object):
                 D_fake, C_fake = self.D(G_x)
                 generator_loss = self.BCE_loss(D_fake, y_real) + self.CE_loss(C_fake, y)
 
-                generator_loss.backward()
+                tmp_loss += generator_loss
+                # generator_loss.backward()
+                tmp_loss.backward()
+                self.D_optimizer.step()
                 self.G_optimizer.step()
 
                 if ((idx + 1) % 10) == 0:

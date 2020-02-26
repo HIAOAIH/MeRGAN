@@ -18,27 +18,41 @@ class MeRGAN(object):
         self.result_dir = args.result_dir + '/' + args.dataset + '/' + args.method
         self.class_array = []
         self.data_list = []
-        if args.dataset == 'MNIST':
+        if self.dataset_name == 'MNIST':
             d = datasets.MNIST('./data', train=True, download=True,
                                transform=transforms.Compose([transforms.Resize(28, 28), transforms.ToTensor(),
                                                              transforms.Normalize((0.5, ), (0.5, ))]))
+            self.image_size = 28
+        elif self.dataset_name == 'SVHN':
+            d = datasets.SVHN('./data', download=True, transform=transforms.Compose([
+                transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ]))
+            self.image_size = 32
         self.dataset_with_class(d)
 
     def dataset_with_class(self, dataset):
         # It works MNIST only
-        for i in range(self.total_class_num):
-            temp = copy.deepcopy(dataset)
-            idx = dataset.targets == i
-            temp.targets = dataset.targets[idx]
-            temp.data = dataset.data[idx]
-            self.data_list.append(temp)
+        if self.dataset_name == 'MNIST':
+            for i in range(self.total_class_num):
+                temp = copy.deepcopy(dataset)
+                idx = dataset.targets == i
+                temp.targets = dataset.targets[idx]
+                temp.data = dataset.data[idx]
+                self.data_list.append(temp)
+        elif self.dataset_name == 'SVHN':
+            for i in range(self.total_class_num):
+                temp = copy.deepcopy(dataset)
+                idx = dataset.labels == i
+                temp.targets = dataset.labels[idx]
+                temp.data = dataset.data[idx]
+                self.data_list.append(temp)
 
     def init_ACGAN(self, dataset, class_index, G_past=None):
         if class_index in self.class_array:
             raise Exception("this class is already trained.")
         self.ACGAN = ACGAN(data_loader=torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, shuffle=True),
-                           class_index=len(self.class_array) + 1, method=self.method, result_dir=self.result_dir,
-                           batch_size=self.batch_size, epoch=self.epoch)
+                           dataset=self.dataset_name, class_index=len(self.class_array) + 1, method=self.method,
+                           result_dir=self.result_dir, batch_size=self.batch_size, epoch=self.epoch)
         self.ACGAN.train(G_past)
         self.class_array.append(class_index)
 
@@ -61,13 +75,15 @@ class MeRGAN(object):
             x_mer = self.ACGAN.G(z_mer, y_mer_one_hot)
 
             if self.ACGAN.gpu_mode:
-                x_mer, y_mer = x_mer.cpu().detach().view(-1, 28, 28), y_mer.cpu().detach()
+                x_mer, y_mer = x_mer.cpu().detach().view(-1, self.image_size, self.image_size), y_mer.cpu().detach()
             else:
-                x_mer, y_mer = x_mer.detach().view(-1, 28, 28), y_mer.detach()
+                x_mer, y_mer = x_mer.detach().view(-1, self.image_size, self.image_size), y_mer.detach()
 
             if i == 0:
-                data_list = CustomDataset(x_mer, y_mer.view(-1))
+                data_list = CustomDataset(x_mer, y_mer.view(-1), self.dataset_name)
             else:
                 data_list.append(x_mer, y_mer.view(-1))
+
+            # print("{}% of train data generated".format(100. * ((i + 1) * self.batch_size) / self.num_in_class * n))
 
         return data_list

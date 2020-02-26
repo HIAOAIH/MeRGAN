@@ -122,7 +122,7 @@ class ACGAN(object):
         data = self.data_loader.__iter__().__next__()[0]
 
         self.G = Generator(self.noise_dim, data.shape[1], data.shape[2], self.total_class_num)
-        self.D = Discriminator(data.shape[1], data.shape[1], data.shape[2], self.total_class_num)
+        self.D = Discriminator(data.shape[1], 1, data.shape[2], self.total_class_num)
 
         self.G_optimizer = optim.Adam(self.G.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
         self.D_optimizer = optim.Adam(self.D.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
@@ -237,8 +237,9 @@ class ACGAN(object):
                               ((epoch + 1), (idx + 1), self.data_loader.dataset.__len__() // self.batch_size,
                                discriminator_loss.item(), ra_loss.item(), generator_loss.item()))
 
-            with torch.no_grad():
-                self.visualize_results((epoch + 1))
+            if epoch % 2 == 1:
+                with torch.no_grad():
+                    self.visualize_results((epoch + 1))
 
     def visualize_results(self, epoch):
         self.G.eval()

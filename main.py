@@ -13,7 +13,7 @@ from TestGenerator import TestGenerator
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='MNIST', help='dataset to train and generate')
+    parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNSIT', 'SVHN'], help='dataset to train and generate')
     parser.add_argument('--class_num', type=int, default=10, help='the number of classes you want to train')
     parser.add_argument('--epoch', type=int, default=20, help='the number of epochs to run')
     parser.add_argument('--batch_size', type=int, default=64, help='the size of batch')
@@ -65,8 +65,8 @@ def main():
                 if i < 9:
                     generated_data.concat_datasets(mergan.data_list[i + 1])
                 if i == 4:
-                    torch.save(mergan.ACGAN.G.state_dict(), './network/jrt/generator_jrt_to_4.pt')
-            torch.save(mergan.ACGAN.G.state_dict(), './network/jrt/generator_jrt_to_9.pt')
+                    torch.save(mergan.ACGAN.G.state_dict(), './network/' + args.dataset + '/jrt/generator_jrt_to_4.pt')
+            torch.save(mergan.ACGAN.G.state_dict(), './network/' + args.dataset + '/jrt/generator_jrt_to_9.pt')
 
         else:
             for i in range(10):
@@ -76,8 +76,8 @@ def main():
                     mergan.init_ACGAN(mergan.data_list[i], i, G_past)
                 G_past = copy.deepcopy(mergan.ACGAN.G)
                 if i == 4:
-                    torch.save(mergan.ACGAN.G.state_dict(), './network/jrt/generator_ra_to_4.pt')
-            torch.save(mergan.ACGAN.G.state_dict(), './network/jrt/generator_ra_to_9.pt')
+                    torch.save(mergan.ACGAN.G.state_dict(), './network/' + args.dataset + '/ra/generator_ra_to_4.pt')
+            torch.save(mergan.ACGAN.G.state_dict(), './network/' + args.dataset + '/ra/generator_ra_to_9.pt')
 
     elif args.work == 'test':
         test_generator = TestGenerator(args)

@@ -166,7 +166,11 @@ class ACGAN(object):
                 D_fake_loss = self.BCE_loss(D_fake, y_fake)
                 C_fake_loss = self.CE_loss(C_fake, y)
 
-                discriminator_loss = D_real_loss + C_real_loss + D_fake_loss + C_fake_loss
+                if self.method == 'joint_retraining':
+                    discriminator_loss = D_real_loss + C_real_loss + D_fake_loss + C_fake_loss
+                elif self.method == 'replay_alignment':
+                    discriminator_loss = D_real_loss + D_fake_loss
+
                 discriminator_loss.backward()
                 # self.D_optimizer.step()
 
@@ -209,7 +213,11 @@ class ACGAN(object):
 
                 G_x = self.G(z, y_vec)
                 D_fake, C_fake = self.D(G_x)
-                generator_loss = self.BCE_loss(D_fake, y_real) + self.CE_loss(C_fake, y)
+
+                if self.method == 'joint_retraining':
+                    generator_loss = self.BCE_loss(D_fake, y_real) + self.CE_loss(C_fake, y)
+                elif self.method == 'replay_alignment':
+                    generator_loss = self.BCE_loss(D_fake, y_real)
 
                 tmp_loss += generator_loss
                 # generator_loss.backward()

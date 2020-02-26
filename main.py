@@ -6,6 +6,7 @@
 import argparse
 import os
 import copy
+import torch
 from MeRGAN import MeRGAN
 
 
@@ -18,6 +19,7 @@ def parse_args():
     parser.add_argument('--num_generated', type=int, default=4096, help='the number of images to generate in each class')
     parser.add_argument('--result_dir', type=str, default='result')
     parser.add_argument('--method', type=str, default='joint_retraining', choices=['jrt', 'joint_retraining', 'ra', 'replay_alignment'])
+    parser.add_argument('--work', type=str, default='train', choices=['train', 'test'], help='train or test')
 
     return check_args(parser.parse_args())
 
@@ -49,23 +51,31 @@ def main():
     if args is None:
         exit()
 
-    mergan = MeRGAN(args)
-    if args.method == 'joint_retraining':
-        for i in range(10):
-            if i == 0:
-                mergan.init_ACGAN(mergan.data_list[i], i)
-            else:
-                mergan.init_ACGAN(generated_data, i)
-            generated_data = mergan.generate_trainset()
-            if i < 9:
-                generated_data.concat_datasets(mergan.data_list[i + 1])
-    else:
-        for i in range(10):
-            if i == 0:
-                mergan.init_ACGAN(mergan.data_list[i], i)
-            else:
-                mergan.init_ACGAN(mergan.data_list[i], i, G_past)
-            G_past = copy.deepcopy(mergan.ACGAN.G)
+    if args.work == 'train':
+        mergan = MeRGAN(args)
+        if args.method == 'joint_retraining':
+            for i in range(10):
+                if i == 0:
+                    mergan.init_ACGAN(mergan.data_list[i], i)
+                else:
+                    mergan.init_ACGAN(generated_data, i)
+                generated_data = mergan.generate_trainset()
+                if i < 9:
+                    generated_data.concat_datasets(mergan.data_list[i + 1])
+                if i == 4:
+                    torch.save(mergan.ACGAN.G.state_dict(), './network/jrt/generator_jrt_to_4.pt')
+            torch.save(mergan.ACGAN.G.state_dict(), './network/jrt/generator_jrt_to_9.pt')
+
+        else:
+            for i in range(10):
+                if i == 0:
+                    mergan.init_ACGAN(mergan.data_list[i], i)
+                else:
+                    mergan.init_ACGAN(mergan.data_list[i], i, G_past)
+                G_past = copy.deepcopy(mergan.ACGAN.G)
+                if i == 4:
+                    torch.save(mergan.ACGAN.G.state_dict(), './network/jrt/generator_ra_to_4.pt')
+            torch.save(mergan.ACGAN.G.state_dict(), './network/jrt/generator_ra_to_9.pt')
 
 
 if __name__ == '__main__':

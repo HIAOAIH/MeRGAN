@@ -8,6 +8,7 @@ import os
 import copy
 import torch
 from MeRGAN import MeRGAN
+from TestGenerator import TestGenerator
 
 
 def parse_args():
@@ -20,6 +21,7 @@ def parse_args():
     parser.add_argument('--result_dir', type=str, default='result')
     parser.add_argument('--method', type=str, default='joint_retraining', choices=['jrt', 'joint_retraining', 'ra', 'replay_alignment'])
     parser.add_argument('--work', type=str, default='train', choices=['train', 'test'], help='train or test')
+    parser.add_argument('--task', type=str, default='to_9', choices=['to_9', 'to_4'], help='the number of classes to classify')
 
     return check_args(parser.parse_args())
 
@@ -76,6 +78,10 @@ def main():
                 if i == 4:
                     torch.save(mergan.ACGAN.G.state_dict(), './network/jrt/generator_ra_to_4.pt')
             torch.save(mergan.ACGAN.G.state_dict(), './network/jrt/generator_ra_to_9.pt')
+
+    elif args.work == 'test':
+        test_generator = TestGenerator(args)
+        test_generator.test()
 
 
 if __name__ == '__main__':

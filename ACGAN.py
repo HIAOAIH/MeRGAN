@@ -120,6 +120,12 @@ class ACGAN(object):
         self.data_loader = data_loader
 
         data = self.data_loader.__iter__().__next__()[0]
+        # if self.dataset == 'MNIST':
+        #     channels = 1
+        #     input_size = 28
+        # elif self.dataset == 'SVHN':
+        #     channels = 3
+        #     input_size = 32
 
         self.G = Generator(self.noise_dim, data.shape[1], data.shape[2], self.total_class_num)
         self.D = Discriminator(data.shape[1], 1, data.shape[2], self.total_class_num)

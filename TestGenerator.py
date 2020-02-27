@@ -6,22 +6,28 @@ from ACGAN import Generator
 
 class TestGenerator(object):
     def __init__(self, args):
+        self.dataset = args.dataset
         self.method = args.method
         self.classifier = torch.hub.load('pytorch/vision:v0.5.0', 'resnet18', pretrained=False)
-        self.classifier.load_state_dict(torch.load('./network/resnet18.pt'))
-        self.generator = Generator()
+        # self.classifier.load_state_dict(torch.load('./network/resnet18.pt'))
+        if args.dataset == 'MNIST':
+            channels = 1
+            input_size = 28
+        elif args.dataset == 'SVHN':
+            channels = 3
+            input_size = 32
+        self.generator = Generator(output_channel=channels, input_size=input_size)
         self.task = args.task
         self.gpu_mode = torch.cuda.is_available()
         self.batch_size = args.batch_size
         self.noise_dim = 100
         self.total_class_num = 10
 
-        if args.dataset == 'MNIST':
+        if self.dataset == 'MNIST':
             self.classifier.conv1 = nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
-        if self.task == 'to_4':
-            self.generator.load_state_dict(torch.load('./network/jrt/generator_jrt_to_4.pt'))
-        elif self.task == 'to_9':
-            self.generator.load_state_dict(torch.load('./network/jrt/generator_jrt_to_9.pt'))
+
+        self.classifier.load_state_dict(torch.load('./network/' + self.dataset + '/resnet18.pt'))
+        self.generator.load_state_dict(torch.load('./network/' + self.dataset + '/' + self.method + '/generator_' + self.method + '_' + self.task + '.pt'))
 
     def test(self):
         correct = 0

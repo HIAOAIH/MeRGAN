@@ -70,7 +70,9 @@ def main():
                 if i == 0:
                     mergan.init_ACGAN(mergan.data_list[i], i)
                 else:
-                    mergan.init_ACGAN(generated_data, i)
+                    G = mergan.ACGAN.G
+                    D = mergan.ACGAN.D
+                    mergan.init_ACGAN(generated_data, i, G, D)
                 generated_data = mergan.generate_trainset()
                 if i < 9:
                     generated_data.concat_datasets(mergan.data_list[i + 1])
@@ -83,8 +85,9 @@ def main():
                 if i == 0:
                     mergan.init_ACGAN(mergan.data_list[i], i)
                 else:
-                    mergan.init_ACGAN(mergan.data_list[i], i, G_past)
-                G_past = copy.deepcopy(mergan.ACGAN.G)
+                    mergan.init_ACGAN(mergan.data_list[i], i, G_past, D_past)
+                G_past = mergan.ACGAN.G
+                D_past = mergan.ACGAN.D
                 if i == 4:
                     torch.save(mergan.ACGAN.G.state_dict(), './network/' + args.dataset + '/' + args.method + '/generator_' + args.method + '_to_4.pt')
             torch.save(mergan.ACGAN.G.state_dict(), './network/' + args.dataset + '/' + args.method + '/generator_' + args.method + '_to_9.pt')

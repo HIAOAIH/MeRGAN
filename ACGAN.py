@@ -203,10 +203,10 @@ class ACGAN(object):
             for idx, (x, y) in enumerate(self.data_loader):
                 if idx == self.data_loader.dataset.__len__() // self.batch_size:
                     break
-                # z = torch.rand(self.batch_size, self.noise_dim)
-                z = Variable(Tensor(np.random.normal(0, 1, (self.batch_size, 100))))
+                z = torch.rand(self.batch_size, self.noise_dim)
+                # z = Variable(Tensor(np.random.normal(0, 1, (self.batch_size, 100))))
 
-                x = Variable(x.type(Tensor))
+                # x = Variable(x.type(Tensor))
 
                 y_vec = torch.zeros(self.batch_size, self.total_class_num).scatter_(
                     1, y.type(torch.LongTensor).unsqueeze(1), 1)
@@ -216,80 +216,103 @@ class ACGAN(object):
                 self.D_optimizer.zero_grad()
 
                 # D를 훈련할 때에는 실제 데이터와 fake 데이터의 loss를 각각 구한 후 한번에 backward & step
-                D_real, C_real = self.D(x)
-                # D_real_loss = self.BCE_loss(D_real, y_real)
-                C_real_loss = self.CE_loss(C_real, y)
-
-                G_x = self.G(z, y_vec)
-                D_fake, C_fake = self.D(G_x)
-                # D_fake_loss = self.BCE_loss(D_fake, y_fake)
-                C_fake_loss = self.CE_loss(C_fake, y)
-
-                gp = self.compute_gradient_penalty(self.D, x, G_x)
-
-                if self.method == 'joint_retraining':
-                    # discriminator_loss = D_real_loss + C_real_loss + D_fake_loss + C_fake_loss
-                    discriminator_loss = -torch.mean(D_real) + torch.mean(D_fake) + 10 * gp + C_real_loss + C_fake_loss
-                elif self.method == 'replay_alignment':
-                    # discriminator_loss = D_real_loss + D_fake_loss
-                    discriminator_loss = -torch.mean(D_real) + torch.mean(D_fake) + 10 * gp
-
-                discriminator_loss.backward()
-                self.D_optimizer.step()
-
-                self.G_optimizer.zero_grad()
-                if (idx + 1) % 5 == 0:
-                    tmp_loss = 0
-                    if self.method == 'replay_alignment' and G_past is not None:
-                        for k in range(self.class_index):
-                            sample_z = torch.zeros(self.batch_size, self.noise_dim)
-                            for i in range(self.batch_size // (self.class_index - 1)):
-                                sample_z[i * (self.class_index - 1)] = torch.rand(1, self.noise_dim)
-                                for j in range(1, self.class_index - 1):
-                                    sample_z[i * (self.class_index - 1) + j] = sample_z[i * (self.class_index - 1)]
-
-                            temp = torch.zeros(self.class_index - 1, 1)
-                            for i in range(self.class_index - 1):
-                                temp[i, 0] = i
-
-                            temp_y = torch.zeros(self.batch_size, 1)
-                            for i in range(self.batch_size // (self.class_index - 1)):
-                                temp_y[i * (self.class_index - 1): (i + 1) * (self.class_index - 1)] = temp
-
-                            sample_y = torch.zeros(self.batch_size, self.total_class_num).scatter_(
-                                1, temp_y.type(torch.LongTensor), 1)
-
-                            if self.gpu_mode:
-                                sample_y, sample_z = sample_y.cuda(), sample_z.cuda()
-
-                            g_from_G = self.G(sample_z, sample_y)
-                            g_from_G_past = G_past(sample_z, sample_y)
-
-                            ra_loss = self.MSE_loss(g_from_G, g_from_G_past)
-                            # ra_loss.backward()
-                            tmp_loss += ra_loss
-                            # 이전 G와의 loss를 먼저 optimize
-                            # self.G_optimizer.step()
-                            # self.G_optimizer.zero_grad()
-                        tmp_loss /= self.class_index
-
-                        # code 원래 위치
+                for i in range(5):
+                    D_real, C_real = self.D(x)
+                    # D_real_loss = self.BCE_loss(D_real, y_real)
+                    # C_real_loss = self.CE_loss(C_real, y)
 
                     G_x = self.G(z, y_vec)
                     D_fake, C_fake = self.D(G_x)
+                    # D_fake_loss = self.BCE_loss(D_fake, y_fake)
+                    # C_fake_loss = self.CE_loss(C_fake, y)
 
-                    if self.method == 'joint_retraining':
-                        # generator_loss = self.BCE_loss(D_fake, y_real) + self.CE_loss(C_fake, y)
-                        generator_loss = -torch.mean(D_fake) + self.CE_loss(C_fake, y)
-                    elif self.method == 'replay_alignment':
-                        # generator_loss = self.BCE_loss(D_fake, y_real)
-                        generator_loss = -torch.mean(D_fake)
+                    gen_cost = -torch.mean(D_fake)
+                    disc_wgan = torch.mean(D_fake) - torch.mean(D_real)
 
-                    tmp_loss = self.lambda_ra * tmp_loss + generator_loss
-                    # generator_loss.backward()
-                    tmp_loss.backward()
-                    # self.D_optimizer.step()
-                    self.G_optimizer.step()
+                    alpha = torch.rand(self.batch_size, 1, 1, 1)
+                    if self.gpu_mode:
+                        alpha = alpha.cuda()
+                    diff = G_x - x
+                    interpolates = (x + (alpha * diff)).requires_grad_(True)
+                    d_interpolates = self.D(interpolates)[0]
+                    grad_output = torch.ones(self.batch_size, 1).requires_grad_(False)
+                    if self.gpu_mode:
+                        grad_output = grad_output.cuda()
+
+                    gradients = autograd.grad(outputs=d_interpolates, inputs=interpolates, grad_outputs=grad_output,
+                                              create_graph=True, retain_graph=True, only_inputs=True)[0]
+
+                    slopes = gradients.view(self.batch_size, -1).norm(dim=1).view(self.batch_size, 1)
+
+                    gp = torch.mean((slopes - 1.) ** 2)
+                    # gp = self.compute_gradient_penalty(self.D, x, G_x)
+
+                    discriminator_loss = disc_wgan + 10 * gp
+                    # if self.method == 'joint_retraining':
+                    #     # discriminator_loss = D_real_loss + C_real_loss + D_fake_loss + C_fake_loss
+                    #     discriminator_loss = -torch.mean(D_real) + torch.mean(D_fake) + 10 * gp # + C_real_loss + C_fake_loss
+                    # elif self.method == 'replay_alignment':
+                    #     # discriminator_loss = D_real_loss + D_fake_loss
+                    #     discriminator_loss = -torch.mean(D_real) + torch.mean(D_fake) + 10 * gp
+
+                    discriminator_loss.backward()
+                    self.D_optimizer.step()
+
+                self.D_optimizer.zero_grad()
+
+                self.G_optimizer.zero_grad()
+                tmp_loss = 0
+                if self.method == 'replay_alignment' and G_past is not None:
+                    for k in range(self.class_index):
+                        sample_z = torch.zeros(self.batch_size, self.noise_dim)
+                        for i in range(self.batch_size // (self.class_index - 1)):
+                            sample_z[i * (self.class_index - 1)] = torch.rand(1, self.noise_dim)
+                            for j in range(1, self.class_index - 1):
+                                sample_z[i * (self.class_index - 1) + j] = sample_z[i * (self.class_index - 1)]
+
+                        temp = torch.zeros(self.class_index - 1, 1)
+                        for i in range(self.class_index - 1):
+                            temp[i, 0] = i
+
+                        temp_y = torch.zeros(self.batch_size, 1)
+                        for i in range(self.batch_size // (self.class_index - 1)):
+                            temp_y[i * (self.class_index - 1): (i + 1) * (self.class_index - 1)] = temp
+
+                        sample_y = torch.zeros(self.batch_size, self.total_class_num).scatter_(
+                            1, temp_y.type(torch.LongTensor), 1)
+
+                        if self.gpu_mode:
+                            sample_y, sample_z = sample_y.cuda(), sample_z.cuda()
+
+                        g_from_G = self.G(sample_z, sample_y)
+                        g_from_G_past = G_past(sample_z, sample_y)
+
+                        ra_loss = self.MSE_loss(g_from_G, g_from_G_past)
+                        # ra_loss.backward()
+                        tmp_loss += ra_loss
+                        # 이전 G와의 loss를 먼저 optimize
+                        # self.G_optimizer.step()
+                        # self.G_optimizer.zero_grad()
+                    tmp_loss /= self.class_index
+
+                    # code 원래 위치
+
+                G_x = self.G(z, y_vec)
+                D_fake, C_fake = self.D(G_x)
+
+                if self.method == 'joint_retraining':
+                    # generator_loss = self.BCE_loss(D_fake, y_real) + self.CE_loss(C_fake, y)
+                    generator_loss = -torch.mean(D_fake)#  + self.CE_loss(C_fake, y)
+                elif self.method == 'replay_alignment':
+                    # generator_loss = self.BCE_loss(D_fake, y_real)
+                    generator_loss = -torch.mean(D_fake)
+
+                tmp_loss = self.lambda_ra * tmp_loss + generator_loss
+                # generator_loss.backward()
+                tmp_loss.backward()
+                # self.D_optimizer.step()
+                self.G_optimizer.step()
+
 
                 if ((idx + 1) % 10) == 0:
                     if self.method == 'joint_retraining' or G_past is None:

@@ -71,9 +71,7 @@ class Discriminator(nn.Module):
         )
         self.cl = nn.Sequential(
             nn.Linear(1024, self.total_class_num),
-            # softmax 추가
-            # nn.Softmax(dim=1)
-            # nn.LogSoftmax(dim=1)
+            nn.Sigmoid()
         )
 
     def forward(self, image):
@@ -90,6 +88,7 @@ class Discriminator(nn.Module):
 
 def compute_gradient_penalty(D, real_data, fake_data):
     alpha = torch.rand(64, 1, 1, 1).cuda() if torch.cuda.is_available() else torch.rand(64, 1, 1, 1)
+    alpha = alpha.expand(real_data.size())
     interpolates = alpha * real_data + (1 - alpha) * fake_data
     interpolates.requires_grad_(True)
     disc_interpolates = D(interpolates)[0]
@@ -105,7 +104,7 @@ def compute_gradient_penalty(D, real_data, fake_data):
 
 class ACGAN(object):
     def __init__(self, data_loader, dataset='MNIST', sample_num=100, noise_dim=118, total_class_num=10, class_index=10,
-                 method='joint_retraining', result_dir='result', batch_size=64, lr=0.0001, beta1=0.0, beta2=0.9, gpu_mode=True,
+                 method='joint_retraining', result_dir='result', batch_size=64, lr=0.00005, beta1=0.5, beta2=0.999, gpu_mode=True,
                  epoch=20):
         self.dataset = dataset
         self.sample_num = sample_num
@@ -252,7 +251,7 @@ class ACGAN(object):
                 # d_real_loss = self.BCE_loss(d_real, y_real)
                 c_real_loss = self.CE_loss(c_real, y)
 
-                z = torch.rand(self.batch_size, self.noise_dim)
+                z = torch.randn(self.batch_size, self.noise_dim)
                 z = z.cuda() if torch.cuda.is_available() else z
 
                 x_fake = self.G(z, y_vec.data)

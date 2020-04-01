@@ -79,7 +79,6 @@ def main():
                 if i == 4:
                     torch.save(mergan.ACGAN.G.state_dict(), './network/' + args.dataset + '/' + args.method + '/generator_' + args.method + '_to_4.pt')
             torch.save(mergan.ACGAN.G.state_dict(), './network/' + args.dataset + '/' + args.method + '/generator_' + args.method + '_to_9.pt')
-
         else:
             for i in range(10):
                 if i == 0:

@@ -11,7 +11,8 @@ class CustomDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         if self.dataset == 'MNIST':
-            return self.data[index].view(1, 28, 28), self.targets[index]
+            return self.data[index].view(1, 32, 32), self.targets[index]
+            # return self.data[index].view(1, 28, 28), self.targets[index]
         elif self.dataset == 'SVHN':
             return self.data[index * 3: index * 3 + 3].view(3, 32, 32), self.targets[index]
 

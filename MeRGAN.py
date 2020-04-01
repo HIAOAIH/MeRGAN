@@ -20,9 +20,10 @@ class MeRGAN(object):
         self.data_list = []
         if self.dataset_name == 'MNIST':
             d = datasets.MNIST('./data', train=True, download=True,
-                               transform=transforms.Compose([transforms.Resize(28, 28), transforms.ToTensor(),
+                               # transform=transforms.Compose([transforms.Resize(28, 28), transforms.ToTensor(),
+                               transform=transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor(),
                                                              transforms.Normalize((0.5, ), (0.5, ))]))
-            self.image_size = 28
+            self.image_size = 32
         elif self.dataset_name == 'SVHN':
             d = datasets.SVHN('./data', download=True, transform=transforms.Compose([
                 transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))

@@ -9,6 +9,7 @@ import copy
 import torch
 from MeRGAN import MeRGAN
 from TestGenerator import TestGenerator
+#from apex import amp
 
 
 def parse_args():
@@ -65,6 +66,8 @@ def main():
 
     if args.work == 'train':
         mergan = MeRGAN(args)
+        #dummy_opt = torch.optim.Adam(mergan.parameters(), lr=1e-3)
+        #mergan, optimizer = amp.initialize(mergan, dummy_opt)
         if args.method == 'joint_retraining':
             for i in range(10):
                 if i == 0:

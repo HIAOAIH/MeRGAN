@@ -71,9 +71,10 @@ class Discriminator(nn.Module):
         )
         self.cl = nn.Sequential(
             nn.Linear(1024, self.total_class_num),
-            # softmax 추가
-            # nn.Softmax(dim=1)
-            # nn.LogSoftmax(dim=1)
+            # nn.Sigmoid(),
+            # sparse_softmax_cross_entropy_with_logits
+            # nn.CrossEntropyLoss: LogSoftmax + NLLLoss
+            #
         )
 
     def forward(self, image):
@@ -136,7 +137,7 @@ class ACGAN(object):
         self.BCE_loss = nn.BCEWithLogitsLoss()
         # loss to classify specific class of input image
         self.CE_loss = nn.CrossEntropyLoss()
-        # self.CE_loss = nn.MultiLabelSoftMarginLoss()
+        # CrossEntropyLoss: LogSoftmax + NLLLoss
 
         if method == 'replay_alignment':
             # loss to train current Generator using past Generator
@@ -251,6 +252,8 @@ class ACGAN(object):
                 d_real_mean = d_real.mean()
                 # d_real_loss = self.BCE_loss(d_real, y_real)
                 c_real_loss = self.CE_loss(c_real, y)
+                c_fake_loss = self.CE_loss(c_fake, y)
+                c_loss = c_real_loss + c_fake_loss
 
                 z = torch.rand(self.batch_size, self.noise_dim)
                 z = z.cuda() if torch.cuda.is_available() else z
@@ -261,12 +264,13 @@ class ACGAN(object):
                 # d_fake_loss = self.BCE_loss(d_fake, y_fake)
                 # c_fake_loss = self.CE_loss(c_fake, y)
 
-                wgan_loss = d_fake_mean - d_real_mean
+                wgan_loss = d_real_mean - d_fake_mean
+                #wgan_loss = d_fake_mean - d_real_mean
                 gp = compute_gradient_penalty(self.D, x.data, x_fake.data)
 
                 if self.method == 'joint_retraining':
                     # discriminator_loss = d_real_loss + d_fake_loss + c_real_loss # + c_fake_loss
-                    discriminator_loss = wgan_loss + gp + c_real_loss # + c_fake_loss
+                    discriminator_loss = wgan_loss + gp + c_loss #c_real_loss # + c_fake_loss
                 elif self.method == 'replay_alignment':
                     # discriminator_loss = d_real_loss + d_fake_loss
                     discriminator_loss = wgan_loss + gp
@@ -318,6 +322,11 @@ class ACGAN(object):
                     d_fake_g, c_fake_g = self.D(x_fake_g)
 
                     d_fake_g_mean = d_fake_g.mean()
+
+                    #d_real, c_real = self.D(x)
+                    #d_real_mean = d_real.mean()
+                    #wgan_loss = d_fake_mean - d_real_mean
+
                     # d_fake_g_loss = self.BCE_loss(d_fake_g, y_real)
                     c_fake_g_loss = self.CE_loss(c_fake_g, y)
 

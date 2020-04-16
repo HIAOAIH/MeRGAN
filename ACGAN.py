@@ -9,88 +9,194 @@ import copy
 
 
 class Generator(nn.Module):
-    def __init__(self, noise_dim=118, output_channel=1, input_size=28, total_class_num=10, class_num=10):
+    def __init__(self, out_channels=1):
         super(Generator, self).__init__()
-        # initial parameters are optimized to MNIST dataset
-        self.noise_dim = noise_dim
-        self.output_channel = output_channel
-        self.input_size = input_size
-        self.total_class_num = total_class_num
-        self.class_num = class_num
+        self.out_channels = out_channels
 
         self.fc = nn.Sequential(
-            nn.Linear(self.noise_dim + self.total_class_num, 1024),
-            nn.BatchNorm1d(1024),
-            nn.ReLU(),
-            nn.Linear(1024, 128 * (self.input_size // 4) ** 2),
-            nn.BatchNorm1d(128 * (self.input_size // 4) ** 2),
-            nn.ReLU(),
+            nn.Linear(128, 256 * 4 * 4),
+            nn.BatchNorm1d(256 * 4 * 4),
+            nn.ReLU()
         )
-        self.deconv = nn.Sequential(
-            nn.ConvTranspose2d(128, 64, 4, 2, 1),
+        self.conv1 = nn.Sequential(
+            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU()
+        )
+        self.conv2 = nn.Sequential(
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.ConvTranspose2d(64, self.output_channel, 4, 2, 1),
-            nn.Tanh(),
+            nn.ReLU()
+        )
+        self.conv3 = nn.Sequential(
+            nn.ConvTranspose2d(64, self.out_channels, kernel_size=4, stride=2, padding=1),
+            nn.Tanh()
         )
 
     def forward(self, noise, label):
-        # concat random noise and answer label
         x = torch.cat([noise, label], 1)
-        x = self.fc(x)
-        x = x.view(-1, 128, self.input_size // 4, self.input_size // 4)
-        x = self.deconv(x)
+        x = self.fc(x).view(-1, 256, 4, 4)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
 
         return x
 
 
 class Discriminator(nn.Module):
-    def __init__(self, input_channel=1, dc_dim=1, input_size=28, total_class_num=10):
+    def __init__(self, in_channels=1):
         super(Discriminator, self).__init__()
-        self.input_channel = input_channel
-        self.dc_dim = dc_dim
-        self.total_class_num = total_class_num
-        self.input_size = input_size
+        self.in_channels = in_channels
 
-        self.conv = nn.Sequential(
-            nn.Conv2d(self.input_channel, 64, 4, 2, 1),
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(64, 128, 4, 2, 1),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.2),
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(self.in_channels, 64, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2)
         )
-        self.fc = nn.Sequential(
-            nn.Linear(128 * (self.input_size // 4) ** 2, 1024),
-            nn.BatchNorm1d(1024),
-            nn.LeakyReLU(0.2),
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2)
         )
-
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2)
+        )
         self.dc = nn.Sequential(
-            nn.Linear(1024, self.dc_dim),
-            # nn.Sigmoid(),
+            nn.Linear(256 * 16, 1),
         )
         self.cl = nn.Sequential(
-            nn.Linear(1024, self.total_class_num),
-            # nn.Sigmoid(),
-            # sparse_softmax_cross_entropy_with_logits
-            # nn.CrossEntropyLoss: LogSoftmax + NLLLoss
-            #
+            nn.Linear(256 * 16, 10),
         )
 
-    def forward(self, image):
-        x = self.conv(image)
-        x = x.view(-1, 128 * (self.input_size // 4) ** 2)
-        x = self.fc(x)
+        # self.conv1 = nn.Sequential(
+        #     nn.Conv2d(self.in_channels, 64, kernel_size=3, stride=2),
+        #     nn.Dropout2d(0.5),
+        #     nn.LeakyReLU(0.2)
+        # )
+        # self.conv2 = nn.Sequential(
+        #     nn.Conv2d(64, 128, kernel_size=3, stride=1),
+        #     nn.BatchNorm2d(128),
+        #     nn.Dropout2d(0.5),
+        #     nn.LeakyReLU(0.2)
+        # )
+        # self.conv3 = nn.Sequential(
+        #     nn.Conv2d(128, 256, kernel_size=3, stride=2),
+        #     nn.BatchNorm2d(256),
+        #     nn.Dropout2d(0.5),
+        #     nn.LeakyReLU(0.2)
+        # )
+        # self.conv4 = nn.Sequential(
+        #     nn.Conv2d(256, 512, kernel_size=3, stride=1),
+        #     nn.BatchNorm2d(512),
+        #     nn.Dropout2d(0.5),
+        #     nn.LeakyReLU(0.2)
+        # )
+        # self.conv5 = nn.Sequential(
+        #     nn.Conv2d(512, 1024, kernel_size=3, stride=2),
+        #     nn.BatchNorm2d(1024),
+        #     nn.Dropout2d(0.5),
+        #     nn.LeakyReLU(0.2)
+        # )
+        # self.dc = nn.Sequential(
+        #     nn.Linear(1024, 1),
+        # )
+        # self.cl = nn.Sequential(
+        #     nn.Linear(1024, 10),
+        # )
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        # x = self.conv4(x)
+        # x = self.conv5(x)
+        x = x.view(-1, 256 * 16)
         d = self.dc(x)
         c = self.cl(x)
 
-        # d: discriminate real or fake
-        # c: classify the class
         return d, c
+
+
+# class Generator(nn.Module):
+#     def __init__(self, noise_dim=118, output_channel=1, input_size=28, total_class_num=10, class_num=10):
+#         super(Generator, self).__init__()
+#         # initial parameters are optimized to MNIST dataset
+#         self.noise_dim = noise_dim
+#         self.output_channel = output_channel
+#         self.input_size = input_size
+#         self.total_class_num = total_class_num
+#         self.class_num = class_num
+#
+#         self.fc = nn.Sequential(
+#             nn.Linear(self.noise_dim + self.total_class_num, 1024),
+#             nn.BatchNorm1d(1024),
+#             nn.ReLU(),
+#             nn.Linear(1024, 128 * (self.input_size // 4) ** 2),
+#             nn.BatchNorm1d(128 * (self.input_size // 4) ** 2),
+#             nn.ReLU(),
+#         )
+#         self.deconv = nn.Sequential(
+#             nn.ConvTranspose2d(128, 64, 4, 2, 1),
+#             nn.BatchNorm2d(64),
+#             nn.ReLU(),
+#             nn.ConvTranspose2d(64, self.output_channel, 4, 2, 1),
+#             nn.Tanh(),
+#         )
+#
+#     def forward(self, noise, label):
+#         # concat random noise and answer label
+#         x = torch.cat([noise, label], 1)
+#         x = self.fc(x)
+#         x = x.view(-1, 128, self.input_size // 4, self.input_size // 4)
+#         x = self.deconv(x)
+#
+#         return x
+#
+#
+# class Discriminator(nn.Module):
+#     def __init__(self, input_channel=1, dc_dim=1, input_size=28, total_class_num=10):
+#         super(Discriminator, self).__init__()
+#         self.input_channel = input_channel
+#         self.dc_dim = dc_dim
+#         self.total_class_num = total_class_num
+#         self.input_size = input_size
+#
+#         self.conv = nn.Sequential(
+#             nn.Conv2d(self.input_channel, 64, 4, 2, 1),
+#             nn.LeakyReLU(0.2),
+#             nn.Conv2d(64, 128, 4, 2, 1),
+#             nn.BatchNorm2d(128),
+#             nn.LeakyReLU(0.2),
+#         )
+#         self.fc = nn.Sequential(
+#             nn.Linear(128 * (self.input_size // 4) ** 2, 1024),
+#             nn.BatchNorm1d(1024),
+#             nn.LeakyReLU(0.2),
+#         )
+#
+#         self.dc = nn.Sequential(
+#             nn.Linear(1024, self.dc_dim),
+#             # nn.Sigmoid(),
+#         )
+#         self.cl = nn.Sequential(
+#             nn.Linear(1024, self.total_class_num),
+#             nn.Sigmoid()
+#         )
+#
+#     def forward(self, image):
+#         x = self.conv(image)
+#         x = x.view(-1, 128 * (self.input_size // 4) ** 2)
+#         x = self.fc(x)
+#         d = self.dc(x)
+#         c = self.cl(x)
+#
+#         # d: discriminate real or fake
+#         # c: classify the class
+#         return d, c
 
 
 def compute_gradient_penalty(D, real_data, fake_data):
     alpha = torch.rand(64, 1, 1, 1).cuda() if torch.cuda.is_available() else torch.rand(64, 1, 1, 1)
+    alpha = alpha.expand(real_data.size())
     interpolates = alpha * real_data + (1 - alpha) * fake_data
     interpolates.requires_grad_(True)
     disc_interpolates = D(interpolates)[0]
@@ -106,7 +212,7 @@ def compute_gradient_penalty(D, real_data, fake_data):
 
 class ACGAN(object):
     def __init__(self, data_loader, dataset='MNIST', sample_num=100, noise_dim=118, total_class_num=10, class_index=10,
-                 method='joint_retraining', result_dir='result', batch_size=64, lr=0.0001, beta1=0.0, beta2=0.9, gpu_mode=True,
+                 method='joint_retraining', result_dir='result', batch_size=64, lr=0.0001, beta1=0.5, beta2=0.9, gpu_mode=True,
                  epoch=20):
         self.dataset = dataset
         self.sample_num = sample_num
@@ -148,8 +254,11 @@ class ACGAN(object):
 
         data = self.data_loader.__iter__().__next__()[0]
 
-        self.G = Generator(self.noise_dim, data.shape[1], data.shape[2], self.total_class_num)
-        self.D = Discriminator(data.shape[1], 1, data.shape[2], self.total_class_num)
+        # self.G = Generator(self.noise_dim, data.shape[1], data.shape[2], self.total_class_num)
+        # self.D = Discriminator(data.shape[1], 1, data.shape[2], self.total_class_num)
+
+        self.G = Generator(out_channels=data.shape[1])
+        self.D = Discriminator(data.shape[1])
 
         self.G_optimizer = optim.Adam(self.G.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
         self.D_optimizer = optim.Adam(self.D.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
@@ -255,7 +364,7 @@ class ACGAN(object):
                 c_fake_loss = self.CE_loss(c_fake, y)
                 c_loss = c_real_loss + c_fake_loss
 
-                z = torch.rand(self.batch_size, self.noise_dim)
+                z = torch.randn(self.batch_size, self.noise_dim)
                 z = z.cuda() if torch.cuda.is_available() else z
 
                 x_fake = self.G(z, y_vec.data)
